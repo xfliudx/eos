@@ -558,7 +558,7 @@ class Node(object):
             msg="( getEosAccount(name=%s) )" % (name);
             return self.processCleosCmd(cmd, cmdDesc, silentErrors=False, exitOnError=exitOnError, exitMsg=msg, returnType=returnType)
         else:
-            assert returnType == ReturnType.json, "MongoDB only supports a returnType of ReturnType.json" 
+            assert returnType == ReturnType.json, "MongoDB only supports a returnType of ReturnType.json"
             return self.getEosAccountFromDb(name, exitOnError=exitOnError)
 
     def getEosAccountFromDb(self, name, exitOnError=False):
@@ -1185,7 +1185,11 @@ class Node(object):
         if Utils.Debug: Utils.Print("Killing node: %s" % (self.cmd))
         assert(self.pid is not None)
         try:
-            os.kill(self.pid, killSignal)
+            if self.popenProc is not None:
+               self.popenProc.send_signal(killSignal)
+               self.popenProc.wait()
+            else:
+               os.kill(self.pid, killSignal)
         except OSError as ex:
             Utils.Print("ERROR: Failed to kill node (%d)." % (self.cmd), ex)
             return False
