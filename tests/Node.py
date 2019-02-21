@@ -1347,6 +1347,9 @@ class Node(object):
             Utils.Print("Node relaunch was successfull.")
         else:
             Utils.Print("ERROR: Node relaunch Failed.")
+            # Ensure the node process is really killed
+            self.popenProc.send_signal(signal.SIGTERM)
+            self.popenProc.wait()
             self.pid=None
             return False
 
