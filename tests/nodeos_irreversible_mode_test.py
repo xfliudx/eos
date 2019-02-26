@@ -50,7 +50,7 @@ try:
    cluster.killall(allInstances=True)
    cluster.cleanup()
    numOfProducers = 4
-   totalNodes = 7
+   totalNodes = 9
    cluster.launch(
       prodCount=numOfProducers,
       totalProducers=numOfProducers,
@@ -60,7 +60,9 @@ try:
       topo="mesh",
       specificExtraNodeosArgs={
          0:"--enable-stale-production",
-         6:"--read-mode irreversible"})
+         4:"--read-mode irreversible",
+         6:"--read-mode irreversible",
+         8:"--read-mode irreversible"})
 
    # Give some time for it to produce, so lib is advancing
    producingNodeId = 0
@@ -122,21 +124,26 @@ try:
                    headBeforeShutdown, head, lib, libBeforeShutdown)
       assert (head == libBeforeShutdown and lib == libBeforeShutdown), assert_msg
 
-   # 3rd test case: Switch mode speculative -> irreversible -> speculative without replay and production disabled
+   # 3rd test case: Switch mode speculative -> irreversible without replay and production disabled
    # Expectation: Node switches mode successfully
-   def switchBackForthSpecAndIrrMode(nodeIdOfNodeToTest, nodeToTest):
+   def switchSpecToIrrMode(nodeIdOfNodeToTest, nodeToTest):
       # Relaunch in irreversible mode
       nodeToTest.kill(signal.SIGTERM)
       isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--read-mode irreversible", timeout=relaunchTimeout)
       assert isRelaunchSuccess, "Fail to relaunch"
+
+   # 4th test case: Switch mode irreversible -> speculative without replay and production disabled
+   # Expectation: Node switches mode successfully
+   def switchIrrToSpecMode(nodeIdOfNodeToTest, nodeToTest):
+      # Relaunch in speculative mode
       nodeToTest.kill(signal.SIGTERM)
       isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
       assert isRelaunchSuccess, "Fail to relaunch"
 
-   # 4th test case: Switch mode speculative -> irreversible -> speculative without replay and production enabled
-   # Expectation: Node switches mode successfully
+   # 5th test case: Switch mode irreversible -> speculative without replay and production enabled
+   # Expectation: Node switches mode successfully and receives next block from the producer
    # Current Bug: Fail to switch to irreversible mode, block_validate_exception next block in the future will be thrown
-   def switchBackForthSpecAndIrrModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+   def switchSpecToIrrModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
       try:
          # Resume block production
          resumeBlockProduction()
@@ -145,14 +152,37 @@ try:
          time.sleep(60) # Wait for some blocks to be produced and lib advance
          isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--read-mode irreversible", timeout=relaunchTimeout)
          assert isRelaunchSuccess, "Fail to relaunch"
-         nodeToTest.kill(signal.SIGTERM)
-         isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
-         assert isRelaunchSuccess, "Fail to relaunch"
+         # Ensure that the relaunched node received blocks from producers
+         head, _, _ = getHeadAndLib(nodeToTest)
+         time.sleep(60) # Wait until lib advance
+         headAfterWaiting, _, _ = getHeadAndLib(nodeToTest)
+         assert headAfterWaiting > head, "Head is not advancing"
       finally:
          # Stop block production
          stopBlockProduction()
 
-   # 5th test case: Switch mode speculative -> irreversible and check the state
+   # 6th test case: Switch mode irreversible -> speculative without replay and production enabled
+   # Expectation: Node switches mode successfully and receives next block from the producer
+   # Current Bug: Node switches mode successfully, however, it fails to establish connection with the producing node
+   def switchIrrToSpecModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+      try:
+         # Resume block production
+         resumeBlockProduction()
+         # Kill and relaunch in irreversible mode
+         nodeToTest.kill(signal.SIGTERM)
+         time.sleep(60) # Wait for some blocks to be produced and lib advance
+         isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
+         assert isRelaunchSuccess, "Fail to relaunch"
+         # Ensure that the relaunched node received blocks from producers
+         head, _, _ = getHeadAndLib(nodeToTest)
+         time.sleep(5)
+         headAfterWaiting, _, _ = getHeadAndLib(nodeToTest)
+         assert headAfterWaiting > head, "Head is not advancing"
+      finally:
+         # Stop block production
+         stopBlockProduction()
+
+   # 7th test case: Switch mode speculative -> irreversible and check the state
    # Expectation: Node switch mode successfully and lib == libBeforeShutdown == head and forkDbBlockNum == forkDbBlockNumBeforeShutdown
    def switchSpecToIrrModeAndCheckState(nodeIdOfNodeToTest, nodeToTest):
       # Track head block num and lib before shutdown
@@ -168,7 +198,7 @@ try:
                    headBeforeShutdown, head, lib, libBeforeShutdown, forkDbBlockNum, forkDbBlockNumBeforeShutdown)
       assert (head == libBeforeShutdown and lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown), assert_msg
 
-   # 6th test case: Switch mode irreversible -> speculative and check the state
+   # 8th test case: Switch mode irreversible -> speculative and check the state
    # Expectation: Node switch mode successfully and lib == libBeforeShutdown and head == and forkDbBlockNum and forkDbBlockNum == forkDbBlockNumBeforeShutdown
    def switchIrrToSpecModeAndCheckState(nodeIdOfNodeToTest, nodeToTest):
       # Track head block num and lib before shutdown
@@ -188,10 +218,12 @@ try:
    # Start executing test cases here
    executeTest(1, replayInIrrModeWithRevBlocks)
    executeTest(2, replayInIrrModeWithoutRevBlocksAndCheckState)
-   executeTest(3, switchBackForthSpecAndIrrMode)
-   executeTest(4, switchBackForthSpecAndIrrModeWithProdEnabled)
-   executeTest(5, switchSpecToIrrModeAndCheckState)
-   executeTest(6, switchIrrToSpecModeAndCheckState)
+   executeTest(3, switchSpecToIrrMode)
+   executeTest(4, switchIrrToSpecMode)
+   executeTest(5, switchSpecToIrrModeWithProdEnabled)
+   executeTest(6, switchIrrToSpecModeWithProdEnabled)
+   executeTest(7, switchSpecToIrrModeAndCheckState)
+   executeTest(8, switchIrrToSpecModeAndCheckState)
 
 finally:
    TestHelper.shutdown(cluster, walletMgr)
