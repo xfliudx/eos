@@ -31,36 +31,17 @@ walletMgr=WalletMgr(True)
 cluster=Cluster(walletd=True)
 cluster.setWalletMgr(walletMgr)
 
-def getLatestStdErrFile(nodeId):
-   dataDir = Cluster.getDataDir(nodeId)
-   latestStdErrFile = None
-   pattern = re.compile(r"stderr\..*\.txt")
-   for item in os.listdir(dataDir):
-      if pattern.match(item) and (latestStdErrFile is None or latestStdErrFile < item):
-         latestStdErrFile = item
-   if latestStdErrFile is None:
-      latestStdErrFile = "stderr.txt"
-   return os.path.join(dataDir, latestStdErrFile)
-
-def checkStdErr(nodeId, message):
-   latestStdErrFile = getLatestStdErrFile(nodeId)
-   with open(latestStdErrFile, 'r') as f:
-      for line in f:
-         if message in line:
-            return True
-   return False
-
 def removeReversibleBlocks(nodeId):
    dataDir = Cluster.getDataDir(nodeId)
    reversibleBlocks = os.path.join(dataDir, "blocks", "reversible")
    shutil.rmtree(reversibleBlocks, ignore_errors=True)
 
-def getHeadBlockNumAndLib(node: Node):
+def getHeadAndLib(node: Node):
    info = node.getInfo()
-   headBlockNum = int(info["head_block_num"])
+   head = int(info["head_block_num"])
    lib = int(info["last_irreversible_block_num"])
-   forkDbHeadBlockNum =  int(info["fork_db_head_block_num"])
-   return headBlockNum, lib, forkDbHeadBlockNum
+   forkDbHead =  int(info["fork_db_head_block_num"])
+   return head, lib, forkDbHead
 
 # List to contain the test result message
 testResultMsgs = []
@@ -69,7 +50,7 @@ try:
    cluster.killall(allInstances=True)
    cluster.cleanup()
    numOfProducers = 4
-   totalNodes = 5
+   totalNodes = 6
    cluster.launch(
       prodCount=numOfProducers,
       totalProducers=numOfProducers,
@@ -91,10 +72,12 @@ try:
    cluster.biosNode.kill(signal.SIGTERM)
 
    def stopBlockProduction():
-      if not producingNode.killed: producingNode.kill(signal.SIGTERM)
+      if not producingNode.killed:
+         producingNode.kill(signal.SIGTERM)
 
    def resumeBlockProduction():
-      if producingNode.killed: producingNode.relaunch(producingNodeId, "", timeout=relaunchTimeout)
+      if producingNode.killed:
+         producingNode.relaunch(producingNodeId, "", timeout=relaunchTimeout)
 
    # Wrapper function to execute test
    # This wrapper function will resurrect the node to be tested, and shut it down by the end of the test
@@ -112,7 +95,8 @@ try:
          testResultMsgs.append("!!!BUG IS CONFIRMED ON TEST CASE #{} {}".format(nodeIdOfNodeToTest, e))
 
    # 1st test case: Replay in irreversible mode with reversible blocks
-   # Bug: duplicate block added error
+   # Expectation: Node replays and launches successfully
+   # Current Bug: duplicate block added error
    def replayInIrrModeWithRevBlocks(nodeIdOfNodeToTest, nodeToTest):
       # Kill node and replay in irreversible mode
       nodeToTest.kill(signal.SIGTERM)
@@ -120,62 +104,78 @@ try:
       assert isRelaunchSuccess, "Fail to relaunch"
 
    # 2nd test case: Replay in irreversible mode without reversible blocks
-   # Bug: last_irreversible_block != the real lib (e.g. if lib is 1000, it replays up to 1000 saying head is 1000 and lib is 999)
-   def replayInIrrModeWithoutRevBlocks(nodeIdOfNodeToTest, nodeToTest):
+   # Expectation: Node replays and launches successfully with lib == head == libBeforeShutdown
+   # Current Bug: last_irreversible_block != the real lib (e.g. if lib is 1000, it replays up to 1000 saying head is 1000 and lib is 999)
+   def replayInIrrModeWithoutRevBlocksAndCheckState(nodeIdOfNodeToTest, nodeToTest):
       # Track head block num and lib before shutdown
-      headBlockNumBeforeShutdown, libBeforeShutdown, _ = getHeadBlockNumAndLib(nodeToTest)
+      headBeforeShutdown, libBeforeShutdown, _ = getHeadAndLib(nodeToTest)
       # Shut node, remove reversible blocks and relaunch
       nodeToTest.kill(signal.SIGTERM)
       removeReversibleBlocks(nodeIdOfNodeToTest)
       isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--replay --read-mode irreversible", timeout=relaunchTimeout)
       assert isRelaunchSuccess, "Fail to relaunch"
       # Check head block num and lib
-      headBlockNum, lib, _ = getHeadBlockNumAndLib(nodeToTest)
-
-      assert_msg = "headBlockNumBeforeShutdown {}, headBlockNum {}, lib {}, libBeforeShutdown {}".format(
-                   headBlockNumBeforeShutdown, headBlockNum, lib, libBeforeShutdown)
-      assert (headBlockNum == libBeforeShutdown and lib == libBeforeShutdown), assert_msg
+      head, lib, _ = getHeadAndLib(nodeToTest)
+      assert_msg = "Expecting head == libBeforeShutdown == lib == libBeforeShutdown however got " + \
+                   "headBeforeShutdown {}, head {}, lib {}, libBeforeShutdown {}".format(
+                   headBeforeShutdown, head, lib, libBeforeShutdown)
+      assert (head == libBeforeShutdown and lib == libBeforeShutdown), assert_msg
 
    # 3rd test case: Switch mode speculative -> irreversible -> speculative without replay and production disabled
+   # Expectation: Node switches mode successfully
    def switchBackForthSpecAndIrrMode(nodeIdOfNodeToTest, nodeToTest):
-       # Track head block num and lib before shutdown
-      headBlockNumBeforeShutdown, libBeforeShutdown, forkDbBlockNumBeforeShutdown = getHeadBlockNumAndLib(nodeToTest)
+      # Relaunch in irreversible mode
       nodeToTest.kill(signal.SIGTERM)
-      isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--read-mode irreversible", timeout=relaunchTimeout)
-      assert(isRelaunchSuccess)
-      nodeToTest.kill(signal.SIGTERM)
-      isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
-      assert(isRelaunchSuccess)
-      # Check head block num and lib
-      headBlockNum, lib, forkDbBlockNum = getHeadBlockNumAndLib(nodeToTest)
-      Print("headBlockNumBeforeShutdown {}, headBlockNum {}, lib {}, libBeforeShutdown {}, forkDbBlockNum {}, forkDbBlockNumBeforeShutdown {}"
-         .format(headBlockNumBeforeShutdown, headBlockNum, lib, libBeforeShutdown, forkDbBlockNum, forkDbBlockNumBeforeShutdown))
-      assert_msg = "headBlockNumBeforeShutdown {}, headBlockNum {}, lib {}, libBeforeShutdown {}, forkDbBlockNum {}, forkDbBlockNumBeforeShutdown {}".format(
-                   headBlockNumBeforeShutdown, headBlockNum, lib, libBeforeShutdown, forkDbBlockNum, forkDbBlockNumBeforeShutdown)
-      assert (headBlockNum == libBeforeShutdown and lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown), assert_msg
-
-
-   # 4th test case: Switch mode speculative -> irreversible -> speculative without replay and production enabled
-   def switchBackForthSpecAndIrrModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
-      # Resume block production
-      resumeBlockProduction()
-      # Kill and relaunch in irreversible mode
-      nodeToTest.kill(signal.SIGTERM)
-      time.sleep(60) # Wait for some blocks to be produced and lib advance
       isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--read-mode irreversible", timeout=relaunchTimeout)
       assert isRelaunchSuccess, "Fail to relaunch"
-      # Stop block production
-      stopBlockProduction()
+      nodeToTest.kill(signal.SIGTERM)
+      isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
+      assert isRelaunchSuccess, "Fail to relaunch"
+
+   # 4th test case: Switch mode speculative -> irreversible -> speculative without replay and production enabled
+   # Expectation: Node switches mode successfully
+   # Current Bug: Fail to switch to irreversible mode, block_validate_exception next block in the future will be thrown
+   def switchBackForthSpecAndIrrModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+      try:
+         # Resume block production
+         resumeBlockProduction()
+         # Kill and relaunch in irreversible mode
+         nodeToTest.kill(signal.SIGTERM)
+         time.sleep(60) # Wait for some blocks to be produced and lib advance
+         isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--read-mode irreversible", timeout=relaunchTimeout)
+         assert isRelaunchSuccess, "Fail to relaunch"
+         nodeToTest.kill(signal.SIGTERM)
+         isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
+         assert isRelaunchSuccess, "Fail to relaunch"
+      finally:
+         # Stop block production
+         stopBlockProduction()
+
+   # 5th test case: Switch mode speculative -> irreversible and check the state
+   # Expectation: Node switch mode successfully and lib == libBeforeShutdown == head and forkDbBlockNum == forkDbBlockNumBeforeShutdown
+   def switchSpecToIrrModeAndCheckState(nodeIdOfNodeToTest, nodeToTest):
+      # Track head block num and lib before shutdown
+      headBeforeShutdown, libBeforeShutdown, forkDbBlockNumBeforeShutdown = getHeadAndLib(nodeToTest)
+      # Kill and relaunch in irreversible mode
+      nodeToTest.kill(signal.SIGTERM)
+      isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "--read-mode irreversible", timeout=relaunchTimeout)
+      assert isRelaunchSuccess, "Fail to relaunch"
+      # Check head block num and lib
+      head, lib, forkDbBlockNum = getHeadAndLib(nodeToTest)
+      assert_msg = "Expecting head == libBeforeShutdown == lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown however got " + \
+                   "headBeforeShutdown {}, head {}, lib {}, libBeforeShutdown {}, forkDbBlockNum {}, forkDbBlockNumBeforeShutdown {}".format(
+                   headBeforeShutdown, head, lib, libBeforeShutdown, forkDbBlockNum, forkDbBlockNumBeforeShutdown)
+      assert (head == libBeforeShutdown and lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown), assert_msg
 
    # Start executing test cases here
    executeTest(1, replayInIrrModeWithRevBlocks)
-   executeTest(2, replayInIrrModeWithoutRevBlocks)
+   executeTest(2, replayInIrrModeWithoutRevBlocksAndCheckState)
    executeTest(3, switchBackForthSpecAndIrrMode)
    executeTest(4, switchBackForthSpecAndIrrModeWithProdEnabled)
+   executeTest(5, switchSpecToIrrModeAndCheckState)
 
 finally:
    TestHelper.shutdown(cluster, walletMgr)
-   # walletMgr.killall(allInstances=True)
    # Print test result
    for msg in testResultMsgs: Print(msg)
 
