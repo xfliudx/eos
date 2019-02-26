@@ -50,7 +50,7 @@ try:
    cluster.killall(allInstances=True)
    cluster.cleanup()
    numOfProducers = 4
-   totalNodes = 6
+   totalNodes = 7
    cluster.launch(
       prodCount=numOfProducers,
       totalProducers=numOfProducers,
@@ -58,8 +58,9 @@ try:
       pnodes=1,
       useBiosBootFile=False,
       topo="mesh",
-      specificExtraNodeosArgs={0:"--plugin eosio::producer_api_plugin --enable-stale-production"},
-      extraNodeosArgs=" --plugin eosio::net_api_plugin")
+      specificExtraNodeosArgs={
+         0:"--enable-stale-production",
+         6:"--read-mode irreversible"})
 
    # Give some time for it to produce, so lib is advancing
    producingNodeId = 0
@@ -167,12 +168,30 @@ try:
                    headBeforeShutdown, head, lib, libBeforeShutdown, forkDbBlockNum, forkDbBlockNumBeforeShutdown)
       assert (head == libBeforeShutdown and lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown), assert_msg
 
+   # 6th test case: Switch mode irreversible -> speculative and check the state
+   # Expectation: Node switch mode successfully and lib == libBeforeShutdown and head == and forkDbBlockNum and forkDbBlockNum == forkDbBlockNumBeforeShutdown
+   def switchIrrToSpecModeAndCheckState(nodeIdOfNodeToTest, nodeToTest):
+      # Track head block num and lib before shutdown
+      headBeforeShutdown, libBeforeShutdown, forkDbBlockNumBeforeShutdown = getHeadAndLib(nodeToTest)
+      # Kill and relaunch in speculative mode
+      nodeToTest.kill(signal.SIGTERM)
+      isRelaunchSuccess = nodeToTest.relaunch(nodeIdOfNodeToTest, "", timeout=relaunchTimeout, addOrSwapFlags={"--read-mode": "speculative"})
+      assert isRelaunchSuccess, "Fail to relaunch"
+
+      # Check head block num and lib
+      head, lib, forkDbBlockNum = getHeadAndLib(nodeToTest)
+      assert_msg = "Expecting head == forkDbBlockNum and lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown however got " + \
+                   "headBeforeShutdown {}, head {}, lib {}, libBeforeShutdown {}, forkDbBlockNum {}, forkDbBlockNumBeforeShutdown {}".format(
+                   headBeforeShutdown, head, lib, libBeforeShutdown, forkDbBlockNum, forkDbBlockNumBeforeShutdown)
+      assert (head == forkDbBlockNum and lib == libBeforeShutdown and forkDbBlockNum == forkDbBlockNumBeforeShutdown), assert_msg
+
    # Start executing test cases here
    executeTest(1, replayInIrrModeWithRevBlocks)
    executeTest(2, replayInIrrModeWithoutRevBlocksAndCheckState)
    executeTest(3, switchBackForthSpecAndIrrMode)
    executeTest(4, switchBackForthSpecAndIrrModeWithProdEnabled)
    executeTest(5, switchSpecToIrrModeAndCheckState)
+   executeTest(6, switchIrrToSpecModeAndCheckState)
 
 finally:
    TestHelper.shutdown(cluster, walletMgr)
