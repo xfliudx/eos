@@ -25,8 +25,14 @@ numOfProducers = 4
 totalNodes = 9
 
 # Parse command line arguments
-args = TestHelper.parse_args({"-v"})
+args = TestHelper.parse_args({"-v","--clean-run","--dump-error-details","--leave-running","--keep-logs"})
 Utils.Debug = args.v
+killAll=args.clean_run
+dumpErrorDetails=args.dump_error_details
+dontKill=args.leave_running
+killEosInstances=not dontKill
+killWallet=not dontKill
+keepLogs=args.keep_logs
 
 # Setup cluster and it's wallet manager
 walletMgr=WalletMgr(True)
@@ -104,10 +110,11 @@ def relaunchNode(node: Node, nodeId, chainArg="", addOrSwapFlags=None, relaunchA
 
 # List to contain the test result message
 testResultMsgs = []
+testSuccessful = False
 try:
    # Kill any existing instances and launch cluster
    TestHelper.printSystemInfo("BEGIN")
-   cluster.killall(allInstances=True)
+   cluster.killall(allInstances=killAll)
    cluster.cleanup()
    cluster.launch(
       prodCount=numOfProducers,
@@ -306,9 +313,9 @@ try:
    executeTest(7, replayInIrrModeWithRevBlksAndProdEnabled)
    executeTest(8, replayInIrrModeWithoutRevBlksAndProdEnabled)
 
+   testSuccessful = True
 finally:
-   TestHelper.printSystemInfo("TEST END")
-   TestHelper.shutdown(cluster, walletMgr)
+   TestHelper.shutdown(cluster, walletMgr, testSuccessful, killEosInstances, killWallet, keepLogs, killAll, dumpErrorDetails)
    # Print test result
    for msg in testResultMsgs: Print(msg)
 
