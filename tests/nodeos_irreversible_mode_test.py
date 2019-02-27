@@ -232,7 +232,7 @@ try:
       # Ensure the node condition is as expected after relaunch
       confirmHeadLibAndForkDbHeadOfSpecMode(nodeToTest, headLibAndForkDbHeadBeforeSwitchMode)
 
-   # 5th test case: Switch mode irreversible -> speculative without replay and connected to producing node
+   # 5th test case: Switch mode speculative -> irreversible without replay and connected to producing node
    # Expectation: Node switches mode successfully
    #              and the head and lib should be advancing after some blocks produced
    #              with head == libBeforeSwitchMode == lib and forkDbHead == headBeforeSwitchMode == forkDbHeadBeforeSwitchMode
