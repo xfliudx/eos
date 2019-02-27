@@ -18,9 +18,10 @@ import shutil
 
 
 ###############################################################
-# nodeos_run_test
+# nodeos_irreversible_mode_test
 # --dump-error-details <Upon error print etc/eosio/node_*/config.ini and var/lib/node_*/stderr.log to stdout>
 # --keep-logs <Don't delete var/lib/node_* folders upon test completion>
+# -v --leave-running --clean-run
 ###############################################################
 
 Print = Utils.Print
