@@ -17,6 +17,12 @@ import subprocess
 import shutil
 
 
+###############################################################
+# nodeos_run_test
+# --dump-error-details <Upon error print etc/eosio/node_*/config.ini and var/lib/node_*/stderr.log to stdout>
+# --keep-logs <Don't delete var/lib/node_* folders upon test completion>
+###############################################################
+
 Print = Utils.Print
 errorExit = Utils.errorExit
 cmdError = Utils.cmdError
@@ -150,6 +156,7 @@ try:
    # Wrapper function to execute test
    # This wrapper function will resurrect the node to be tested, and shut it down by the end of the test
    def executeTest(nodeIdOfNodeToTest, runTestScenario):
+      testResult = False
       try:
          # Relaunch killed node so it can be used for the test
          nodeToTest = cluster.getNode(nodeIdOfNodeToTest)
@@ -161,8 +168,10 @@ try:
          # Kill node after use
          if not nodeToTest.killed: nodeToTest.kill(signal.SIGTERM)
          testResultMsgs.append("!!!TEST CASE #{} ({}) IS SUCCESSFUL".format(nodeIdOfNodeToTest, runTestScenario.__name__))
+         testResult = True
       except Exception as e:
          testResultMsgs.append("!!!BUG IS CONFIRMED ON TEST CASE #{} ({}): {}".format(nodeIdOfNodeToTest, runTestScenario.__name__, e))
+      return testResult
 
    # 1st test case: Replay in irreversible mode with reversible blks
    # Expectation: Node replays and launches successfully
@@ -304,16 +313,16 @@ try:
 
 
    # Start executing test cases here
-   executeTest(1, replayInIrrModeWithRevBlks)
-   executeTest(2, replayInIrrModeWithoutRevBlks)
-   executeTest(3, switchSpecToIrrMode)
-   executeTest(4, switchIrrToSpecMode)
-   executeTest(5, switchSpecToIrrModeWithProdEnabled)
-   executeTest(6, switchIrrToSpecModeWithProdEnabled)
-   executeTest(7, replayInIrrModeWithRevBlksAndProdEnabled)
-   executeTest(8, replayInIrrModeWithoutRevBlksAndProdEnabled)
+   testResult1 = executeTest(1, replayInIrrModeWithRevBlks)
+   testResult2 = executeTest(2, replayInIrrModeWithoutRevBlks)
+   testResult3 = executeTest(3, switchSpecToIrrMode)
+   testResult4 = executeTest(4, switchIrrToSpecMode)
+   testResult5 = executeTest(5, switchSpecToIrrModeWithProdEnabled)
+   testResult6 = executeTest(6, switchIrrToSpecModeWithProdEnabled)
+   testResult7 = executeTest(7, replayInIrrModeWithRevBlksAndProdEnabled)
+   testResult8 = executeTest(8, replayInIrrModeWithoutRevBlksAndProdEnabled)
 
-   testSuccessful = True
+   testSuccessful = testResult1 and testResult2 and testResult3 and testResult4 and testResult5 and testResult6 and testResult7 and testResult8
 finally:
    TestHelper.shutdown(cluster, walletMgr, testSuccessful, killEosInstances, killWallet, keepLogs, killAll, dumpErrorDetails)
    # Print test result
