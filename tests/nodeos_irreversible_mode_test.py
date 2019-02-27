@@ -51,6 +51,10 @@ def removeReversibleBlks(nodeId):
    reversibleBlks = os.path.join(dataDir, "blocks", "reversible")
    shutil.rmtree(reversibleBlks, ignore_errors=True)
 
+def isReversibleBlocksExist(nodeId):
+   dataDir = Cluster.getDataDir(nodeId)
+   return os.path.exists(os.path.join(dataDir, "blocks", "reversible"))
+
 def getHeadLibAndForkDbHead(node: Node):
    info = node.getInfo()
    assert info is not None, "Fail to retrieve info from the node, the node is currently having a problem"
@@ -77,11 +81,16 @@ def ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest):
 # headLibAndForkDbHeadBeforeSwitchMode should be only passed IF production is disabled, otherwise it provides erroneous check
 # When comparing with the the state before node is switched:
 # - head == libBeforeSwitchMode == lib and forkDbHead == headBeforeSwitchMode == forkDbHeadBeforeSwitchMode
-def confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest, headLibAndForkDbHeadBeforeSwitchMode=None):
+def confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest, headLibAndForkDbHeadBeforeSwitchMode=None):
    # In irreversible mode, head should be equal to lib and not equal to fork Db blk num
    head, lib, forkDbHead = getHeadLibAndForkDbHead(nodeToTest)
    assert head == lib, "Head ({}) should be equal to lib ({})".format(head, lib)
-   assert forkDbHead > head, "Fork db head ({}) should be larger than the head ({})".format(forkDbHead, head)
+
+   # Fork db can be equal to the head if there is no reversible blocks
+   if isReversibleBlocksExist(nodeIdOfNodeToTest):
+      assert forkDbHead > head, "Fork db head ({}) should be larger or equal to the head ({}) when there's reversible blocks".format(forkDbHead, head)
+   else:
+      assert forkDbHead == head, "Fork db head ({}) should be larger or equal to the head ({}) when there's no reversible blocks".format(forkDbHead, head)
 
    if headLibAndForkDbHeadBeforeSwitchMode:
       headBeforeSwitchMode, libBeforeSwitchMode, forkDbHeadBeforeSwitchMode = headLibAndForkDbHeadBeforeSwitchMode
@@ -184,7 +193,7 @@ try:
       relaunchNode(nodeToTest, nodeIdOfNodeToTest, chainArg=" --read-mode irreversible --replay")
 
       # Confirm state
-      confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
+      confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest)
 
    # 2nd test case: Replay in irreversible mode without reversible blks
    # Expectation: Node replays and launches successfully
@@ -200,7 +209,7 @@ try:
       relaunchNode(nodeToTest, nodeIdOfNodeToTest, chainArg=" --read-mode irreversible --replay")
 
       # Ensure the node condition is as expected after relaunch
-      confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest, headLibAndForkDbHeadBeforeSwitchMode)
+      confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest, headLibAndForkDbHeadBeforeSwitchMode)
 
    # 3rd test case: Switch mode speculative -> irreversible without replay
    # Expectation: Node switches mode successfully
@@ -215,7 +224,7 @@ try:
       relaunchNode(nodeToTest, nodeIdOfNodeToTest, chainArg=" --read-mode irreversible")
 
       # Ensure the node condition is as expected after relaunch
-      confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest, headLibAndForkDbHeadBeforeSwitchMode)
+      confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest, headLibAndForkDbHeadBeforeSwitchMode)
 
    # 4th test case: Switch mode irreversible -> speculative without replay
    # Expectation: Node switches mode successfully
@@ -248,7 +257,7 @@ try:
 
          # Ensure the node condition is as expected after relaunch
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
-         confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
+         confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest)
       finally:
          stopProdNode()
 
@@ -287,7 +296,7 @@ try:
 
          # Ensure the node condition is as expected after relaunch
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
-         confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
+         confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest)
       finally:
          stopProdNode()
 
@@ -308,7 +317,7 @@ try:
 
          # Ensure the node condition is as expected after relaunch
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
-         confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
+         confirmHeadLibAndForkDbHeadOfIrrMode(nodeIdOfNodeToTest, nodeToTest)
       finally:
          stopProdNode()
 
