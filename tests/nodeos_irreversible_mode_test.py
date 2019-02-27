@@ -40,13 +40,15 @@ def removeReversibleBlks(nodeId):
 
 def getHeadLibAndForkDbHead(node: Node):
    info = node.getInfo()
+   assert info is not None, "Fail to retrieve info from the node, the node is currently having a problem"
    head = int(info["head_block_num"])
    lib = int(info["last_irreversible_block_num"])
    forkDbHead =  int(info["fork_db_head_block_num"])
    return head, lib, forkDbHead
 
+# Around 30 seconds should be enough to advance lib for 4 producers
 def waitForBlksProducedAndLibAdvanced():
-   time.sleep(60)
+   time.sleep(30)
 
 # Ensure that the relaunched node received blks from producers, in other words head and lib is advancing
 def ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest):
@@ -304,10 +306,8 @@ try:
    executeTest(7, replayInIrrModeWithRevBlksAndProdEnabled)
    executeTest(8, replayInIrrModeWithoutRevBlksAndProdEnabled)
 
-   TestHelper.printSystemInfo("TEST END SUCCESSFULLY")
-except:
-   TestHelper.printSystemInfo("TEST END WITH SOME FAILURE")
 finally:
+   TestHelper.printSystemInfo("TEST END")
    TestHelper.shutdown(cluster, walletMgr)
    # Print test result
    for msg in testResultMsgs: Print(msg)
