@@ -329,4 +329,5 @@ finally:
    # Print test result
    for msg in testResultMsgs: Print(msg)
 
-exit(0)
+exitCode = 0 if testSuccessful else 1
+exit(exitCode)
