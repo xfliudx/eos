@@ -137,11 +137,11 @@ try:
    producingNodeId = 0
    producingNode = cluster.getNode(producingNodeId)
 
-   def stopBlkProduction():
+   def stopProdNode():
       if not producingNode.killed:
          producingNode.kill(signal.SIGTERM)
 
-   def resumeBlkProduction():
+   def startProdNode():
       if producingNode.killed:
          producingNode.relaunch(producingNodeId, "", timeout=relaunchTimeout)
 
@@ -231,14 +231,14 @@ try:
       # Ensure the node condition is as expected after relaunch
       confirmHeadLibAndForkDbHeadOfSpecMode(nodeToTest, headLibAndForkDbHeadBeforeSwitchMode)
 
-   # 5th test case: Switch mode irreversible -> speculative without replay and production enabled
+   # 5th test case: Switch mode irreversible -> speculative without replay and connected to producing node
    # Expectation: Node switches mode successfully
    #              and the head and lib should be advancing after some blocks produced
    #              with head == libBeforeSwitchMode == lib and forkDbHead == headBeforeSwitchMode == forkDbHeadBeforeSwitchMode
    # Current Bug: Fail to switch to irreversible mode, blk_validate_exception next blk in the future will be thrown
-   def switchSpecToIrrModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+   def switchSpecToIrrModeWithConnectedToProdNode(nodeIdOfNodeToTest, nodeToTest):
       try:
-         resumeBlkProduction()
+         startProdNode()
 
          # Kill and relaunch in irreversible mode
          nodeToTest.kill(signal.SIGTERM)
@@ -249,16 +249,16 @@ try:
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
          confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
       finally:
-         stopBlkProduction()
+         stopProdNode()
 
-   # 6th test case: Switch mode irreversible -> speculative without replay and production enabled
+   # 6th test case: Switch mode irreversible -> speculative without replay and connected to producing node
    # Expectation: Node switches mode successfully
    #              and the head and lib should be advancing after some blocks produced
    #              with head == forkDbHeadBeforeSwitchMode == forkDbHead and lib == headBeforeSwitchMode == libBeforeSwitchMode
    # Current Bug: Node switches mode successfully, however, it fails to establish connection with the producing node
-   def switchIrrToSpecModeWithProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+   def switchIrrToSpecModeWithConnectedToProdNode(nodeIdOfNodeToTest, nodeToTest):
       try:
-         resumeBlkProduction()
+         startProdNode()
 
          # Kill and relaunch in irreversible mode
          nodeToTest.kill(signal.SIGTERM)
@@ -269,16 +269,16 @@ try:
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
          confirmHeadLibAndForkDbHeadOfSpecMode(nodeToTest)
       finally:
-         stopBlkProduction()
+         stopProdNode()
 
-   # 7th test case: Replay in irreversible mode with reversible blks while production is enabled
+   # 7th test case: Replay in irreversible mode with reversible blks while connected to producing node
    # Expectation: Node replays and launches successfully
    #              and the head and lib should be advancing after some blocks produced
    #              with head == libBeforeSwitchMode == lib and forkDbHead == headBeforeSwitchMode == forkDbHeadBeforeSwitchMode
    # Current Bug: duplicate blk added error
-   def replayInIrrModeWithRevBlksAndProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+   def replayInIrrModeWithRevBlksAndConnectedToProdNode(nodeIdOfNodeToTest, nodeToTest):
       try:
-         resumeBlkProduction()
+         startProdNode()
          # Kill node and replay in irreversible mode
          nodeToTest.kill(signal.SIGTERM)
          waitForBlksProducedAndLibAdvanced() # Wait
@@ -288,16 +288,16 @@ try:
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
          confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
       finally:
-         stopBlkProduction()
+         stopProdNode()
 
-   # 8th test case: Replay in irreversible mode without reversible blks while production is enabled
+   # 8th test case: Replay in irreversible mode without reversible blks while connected to producing node
    # Expectation: Node replays and launches successfully
    #              and the head and lib should be advancing after some blocks produced
    #              with head == libBeforeSwitchMode == lib and forkDbHead == headBeforeSwitchMode == forkDbHeadBeforeSwitchMode
    # Current Bug: Nothing
-   def replayInIrrModeWithoutRevBlksAndProdEnabled(nodeIdOfNodeToTest, nodeToTest):
+   def replayInIrrModeWithoutRevBlksAndConnectedToProdNode(nodeIdOfNodeToTest, nodeToTest):
       try:
-         resumeBlkProduction()
+         startProdNode()
 
          # Kill node, remove rev blks and then replay in irreversible mode
          nodeToTest.kill(signal.SIGTERM)
@@ -309,7 +309,7 @@ try:
          ensureHeadLibAndForkDbHeadIsAdvancing(nodeToTest)
          confirmHeadLibAndForkDbHeadOfIrrMode(nodeToTest)
       finally:
-         stopBlkProduction()
+         stopProdNode()
 
 
    # Start executing test cases here
@@ -317,10 +317,10 @@ try:
    testResult2 = executeTest(2, replayInIrrModeWithoutRevBlks)
    testResult3 = executeTest(3, switchSpecToIrrMode)
    testResult4 = executeTest(4, switchIrrToSpecMode)
-   testResult5 = executeTest(5, switchSpecToIrrModeWithProdEnabled)
-   testResult6 = executeTest(6, switchIrrToSpecModeWithProdEnabled)
-   testResult7 = executeTest(7, replayInIrrModeWithRevBlksAndProdEnabled)
-   testResult8 = executeTest(8, replayInIrrModeWithoutRevBlksAndProdEnabled)
+   testResult5 = executeTest(5, switchSpecToIrrModeWithConnectedToProdNode)
+   testResult6 = executeTest(6, switchIrrToSpecModeWithConnectedToProdNode)
+   testResult7 = executeTest(7, replayInIrrModeWithRevBlksAndConnectedToProdNode)
+   testResult8 = executeTest(8, replayInIrrModeWithoutRevBlksAndConnectedToProdNode)
 
    testSuccessful = testResult1 and testResult2 and testResult3 and testResult4 and testResult5 and testResult6 and testResult7 and testResult8
 finally:
